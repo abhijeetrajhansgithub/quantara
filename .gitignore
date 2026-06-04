@@ -12,6 +12,7 @@ wheels/
 # Database files
 *.db
 *.index
+*.json
 
 # Environment files
 .env
