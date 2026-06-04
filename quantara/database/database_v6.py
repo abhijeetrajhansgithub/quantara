@@ -30,14 +30,11 @@ from quantara.errors.errors import (
 from quantara.indexes.bruteforce import BruteForceIndex
 from quantara.indexes.registry import INDEX_REGISTRY
 
-
 from quantara.database.models import Record, Config
 
 
 class Database:
 
-    # Resolved once at class definition. If the registry is truly dynamic,
-    # callers should instantiate after all indexes are registered.
     INDEXES = INDEX_REGISTRY.get_indexes_dict()
     INDEXES["default"] = BruteForceIndex
 
@@ -46,26 +43,23 @@ class Database:
         db_name: str,
         dimensions: int | None = None,
         auto_dim: bool = True,
-        auto_persist: bool = True
+        auto_persist: bool = True,
+        **kwargs
     ):
-
         self.db_name = db_name
         self.dimensions = dimensions
         self.auto_dim = auto_dim
         self.auto_persist = auto_persist
 
+        self.provided_index_collection = kwargs.get("index_collection", "default")
+        self.provided_index_path = kwargs.get("index_path", None)
+
         if not self.db_name.endswith(".db"):
             self.db_name += ".db"
 
-        self._path = os.path.join(
-            os.getcwd(),
-            self.db_name
-        )
+        self._path = os.path.join(os.getcwd(), self.db_name)
 
         self._records: dict[str, dict[str, Record | Config]] = self._default_records()
-
-        # _indexes is fully built by _load_doc() -> _rebuild_indexes().
-        # Don't pre-populate it here to avoid a redundant rebuild.
         self._indexes: dict[str, Any] = {}
 
         self._load_doc()
@@ -74,22 +68,15 @@ class Database:
     # Internal Helpers
     # ==========================================================
 
-    def _validate_collection(
-        self,
-        collection: str
-    ) -> None:
-
+    def _validate_collection(self, collection: str) -> None:
+        """Raise CollectionNotFoundError if the given collection does not exist in _records."""
         if collection not in self._records:
             raise CollectionNotFoundError(
                 f"Collection '{collection}' not found."
             )
 
-    def _validate_doc(
-        self,
-        collection: str,
-        id: str
-    ) -> None:
-
+    def _validate_doc(self, collection: str, id: str) -> None:
+        """Raise CollectionNotFoundError or IndexNotFoundError if the collection or record id is missing."""
         self._validate_collection(collection)
 
         if id not in self._records[collection]:
@@ -97,8 +84,8 @@ class Database:
                 f"Id '{id}' not found in collection '{collection}'."
             )
 
-    def _validate_index_type(self, index: str) -> None:
-        """Raise ValueError if index type is not registered."""
+    def _validate_index_algo(self, index: str) -> None:
+        """Raise ValueError if the given index type string is not present in the index registry."""
         if index not in self.INDEXES:
             raise ValueError(
                 f"Index '{index}' not found in registry. "
@@ -110,24 +97,31 @@ class Database:
     # ==========================================================
 
     def _get_config(self) -> dict[str, Any]:
+        """Return the entire _config dict from _records."""
         return self._records["_config"]
 
     def _set_config(self, config: dict[str, Any]) -> None:
+        """Replace the entire _config dict in _records with the given dict."""
         self._records["_config"] = config
 
     def _update_config(self, key: str, value: Any) -> None:
+        """Set a single key-value pair inside _config."""
         self._records["_config"][key] = value
 
     def _get_config_value(self, key: str) -> Any:
+        """Return the value for a given key from _config."""
         return self._records["_config"][key]
 
     def _has_config_value(self, key: str) -> bool:
+        """Return True if the given key exists in _config."""
         return key in self._records["_config"]
 
     def _delete_config_value(self, key: str) -> None:
+        """Delete a key from _config."""
         del self._records["_config"][key]
 
     def _clear_config(self) -> None:
+        """Reset _config to an empty dict."""
         self._records["_config"] = {}
 
     # ==========================================================
@@ -135,24 +129,31 @@ class Database:
     # ==========================================================
 
     def get_config(self) -> dict[str, Any]:
+        """Return the full database configuration dictionary."""
         return self._get_config()
 
     def set_config(self, config: dict[str, Any]) -> None:
+        """Replace the full database configuration with the given dict."""
         self._set_config(config)
 
     def update_config(self, key: str, value: Any) -> None:
+        """Update a single key inside the database configuration."""
         self._update_config(key, value)
 
     def get_config_value(self, key: str) -> Any:
+        """Return the value of a single key from the database configuration."""
         return self._get_config_value(key)
 
     def has_config_value(self, key: str) -> bool:
+        """Return True if the given key exists in the database configuration."""
         return self._has_config_value(key)
 
     def delete_config_value(self, key: str) -> None:
+        """Remove a key from the database configuration."""
         self._delete_config_value(key)
 
     def clear_config(self) -> None:
+        """Wipe the entire database configuration dictionary."""
         self._clear_config()
 
     # ==========================================================
@@ -164,15 +165,15 @@ class Database:
         collection: str,
         index: Literal["default", "bruteforce"] | str = "default"
     ) -> None:
-
-        # FIX: Use a proper ValueError instead of assert, which is stripped
-        # in optimised mode (python -O) and would silently allow bad index types.
-        self._validate_index_type(index)
+        """
+        Create a new named collection with the specified index type.
+        Does nothing if the collection already exists.
+        Persists the chosen index type in _config so it survives a reload.
+        """
+        self._validate_index_algo(index)
 
         if not isinstance(collection, str):
-            raise TypeError(
-                "Collection name must be a string."
-            )
+            raise TypeError("Collection name must be a string.")
 
         if collection in self._records:
             return
@@ -180,50 +181,43 @@ class Database:
         self._records[collection] = {}
         self._indexes[collection] = self.INDEXES[index]()
 
-        # FIX: Persist the chosen index type so _rebuild_indexes() can restore
-        # the correct index class after a reload, rather than always defaulting
-        # to "default".
         self._records["_config"].setdefault("_collection_indexes", {})[collection] = index
 
         if self.auto_persist:
             self.persist_doc()
 
-    def delete_collection(
-        self,
-        collection: str
-    ) -> None:
-
+    def delete_collection(self, collection: str) -> None:
+        """
+        Delete a named collection and its associated in-memory index.
+        Raises ValueError if attempting to delete the reserved _config collection,
+        and RuntimeError if attempting to delete the default collection.
+        """
         if collection == "_config":
             raise ValueError("Cannot delete config collection.")
 
         if collection == "default":
-            raise RuntimeError(
-                "Default collection cannot be deleted."
-            )
+            raise RuntimeError("Default collection cannot be deleted.")
 
         self._validate_collection(collection)
 
         del self._records[collection]
         del self._indexes[collection]
 
-        # Remove the stored index type for this collection.
         self._records["_config"].get("_collection_indexes", {}).pop(collection, None)
 
         if self.auto_persist:
             self.persist_doc()
 
-    def list_collections(
-        self
-    ) -> list[str]:
-
+    def list_collections(self) -> list[str]:
+        """Return a list of all user-facing collection names, excluding _config."""
         return [k for k in self._records if k != "_config"]
 
-    def rename_collection(
-        self,
-        old_name: str,
-        new_name: str
-    ) -> None:
-
+    def rename_collection(self, old_name: str, new_name: str) -> None:
+        """
+        Rename an existing collection.
+        Moves both the records and the in-memory index to the new key,
+        and updates the stored index type in _config.
+        """
         self._validate_collection(old_name)
 
         if new_name in self._records:
@@ -237,7 +231,6 @@ class Database:
         self._indexes[new_name] = self._indexes[old_name]
         del self._indexes[old_name]
 
-        # Keep stored index type in sync with the rename.
         col_indexes = self._records["_config"].get("_collection_indexes", {})
         if old_name in col_indexes:
             col_indexes[new_name] = col_indexes.pop(old_name)
@@ -245,12 +238,11 @@ class Database:
         if self.auto_persist:
             self.persist_doc()
 
-    def clone_collection(
-        self,
-        source: str,
-        target: str
-    ) -> None:
-
+    def clone_collection(self, source: str, target: str) -> None:
+        """
+        Shallow-copy a collection and its index into a new collection named target.
+        Carries the source index type over to the clone in _config.
+        """
         self._validate_collection(source)
 
         if target in self._records:
@@ -261,7 +253,6 @@ class Database:
         self._records[target] = self._records[source].copy()
         self._indexes[target] = self._indexes[source].copy()
 
-        # Carry the source index type over to the clone.
         col_indexes = self._records["_config"].get("_collection_indexes", {})
         if source in col_indexes:
             col_indexes[target] = col_indexes[source]
@@ -281,7 +272,11 @@ class Database:
         collection: str = "default",
         **kwargs
     ) -> str:
-
+        """
+        Insert a single record into the given collection.
+        Auto-infers dimensions from the first vector if auto_dim is True.
+        Returns the newly assigned record UUID.
+        """
         self._validate_collection(collection)
 
         _name = name if name is not None else kwargs.get("name")
@@ -292,7 +287,6 @@ class Database:
 
         if _name is None:
             missing_params.append("name")
-
         if _vector is None:
             missing_params.append("vector")
 
@@ -333,12 +327,11 @@ class Database:
 
         return record_id
 
-    def delete_doc(
-        self,
-        id: str,
-        collection: str = "default"
-    ) -> None:
-
+    def delete_doc(self, id: str, collection: str = "default") -> None:
+        """
+        Remove a record by id from the given collection and its index.
+        Raises IndexNotFoundError if the id does not exist.
+        """
         self._validate_doc(collection, id)
 
         del self._records[collection][id]
@@ -355,7 +348,11 @@ class Database:
         vector: Optional[list[float]] = None,
         metadata: Optional[dict[str, Any]] = None
     ) -> None:
-
+        """
+        Update one or more fields of an existing record.
+        Only updates the in-memory index when a new vector is actually provided,
+        to avoid corrupting the index with a None value.
+        """
         self._validate_doc(collection, id)
 
         if vector is not None:
@@ -374,29 +371,20 @@ class Database:
 
         if name is not None:
             record.name = name
-
         if vector is not None:
             record.vector = vector
-
         if metadata is not None:
             record.metadata = metadata
 
-        # Only update the index when a new vector is actually provided.
-        # Passing None would corrupt BruteForceIndex._vectors.
         if vector is not None:
             self._indexes[collection].update(id, vector)
 
         if self.auto_persist:
             self.persist_doc()
 
-    def get_doc(
-        self,
-        id: str,
-        collection: str = "default"
-    ) -> Record:
-
+    def get_doc(self, id: str, collection: str = "default") -> Record:
+        """Return the Record object for the given id from the specified collection."""
         self._validate_doc(collection, id)
-
         return self._records[collection][id]
 
     # ==========================================================
@@ -413,7 +401,18 @@ class Database:
         metric: str = "cosine",
         basic: bool = True
     ):
+        """
+        Search for the top-k nearest records to input_vector in the given collection.
 
+        When basic=True, performs a linear scan over all records, applying optional
+        metadata filters and scoring via the chosen metric (cosine, dot, euclidean).
+
+        When basic=False, delegates to the collection's index for approximate or
+        exact nearest-neighbour search, then applies metadata filters post-hoc.
+
+        Returns a list of (record_id, score) tuples, or
+        (record_id, score, name, metadata) tuples when return_text_outputs=True.
+        """
         if basic:
             if self.dimensions is not None:
                 if len(input_vector) != self.dimensions:
@@ -427,15 +426,10 @@ class Database:
             scores = []
 
             for record_id, record in self._records[collection].items():
-
                 if filters is not None:
-                    valid = True
-
-                    for key, value in filters.items():
-                        if record.metadata.get(key) != value:
-                            valid = False
-                            break
-
+                    valid = all(
+                        record.metadata.get(k) == v for k, v in filters.items()
+                    )
                     if not valid:
                         continue
 
@@ -453,15 +447,10 @@ class Database:
                 else:
                     scores.append((record_id, score))
 
-            if metric == "euclidean":
-                scores.sort(key=lambda x: x[1], reverse=False)
-            else:
-                scores.sort(key=lambda x: x[1], reverse=True)
-
+            scores.sort(key=lambda x: x[1], reverse=(metric != "euclidean"))
             return scores[:top_k]
 
         else:
-            # Use index-backed search.
             results = self._indexes[collection].search(
                 query_vector=input_vector,
                 top_k=top_k,
@@ -472,6 +461,13 @@ class Database:
 
             for record_id, score in results:
                 record = self._records[collection][record_id]
+
+                if filters is not None:
+                    valid = all(
+                        record.metadata.get(k) == v for k, v in filters.items()
+                    )
+                    if not valid:
+                        continue
 
                 if return_text_outputs:
                     final_results.append(
@@ -486,27 +482,23 @@ class Database:
     # Utility
     # ==========================================================
 
-    def list_docs(
-        self,
-        collection: str = "default"
-    ) -> list[str]:
-
+    def list_docs(self, collection: str = "default") -> list[str]:
+        """Return a list of all record ids in the given collection."""
         self._validate_collection(collection)
-
         return list(self._records[collection].keys())
 
-    def clear(
-        self,
-        collection: Optional[str] = None
-    ) -> None:
-
+    def clear(self, collection: Optional[str] = None) -> None:
+        """
+        Clear all records and reset indexes.
+        If collection is None, resets the entire database to its default state.
+        If a collection name is given, clears only that collection's records and index.
+        """
         if collection is None:
             self._records = self._default_records()
             self._indexes = {"default": self.INDEXES["default"]()}
         else:
             self._validate_collection(collection)
             self._records[collection].clear()
-            # Reset the index so stale vectors don't pollute future searches.
             self._indexes[collection].clear()
 
         if self.auto_persist:
@@ -516,25 +508,22 @@ class Database:
     # Persistence
     # ==========================================================
 
-    def persist_doc(
-        self
-    ) -> None:
-
+    def persist_doc(self) -> None:
+        """Serialise the entire _records dict to disk using pickle."""
         with open(self._path, "wb") as f:
-            pickle.dump(
-                self._records,
-                f,
-                protocol=pickle.HIGHEST_PROTOCOL
-            )
+            pickle.dump(self._records, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _default_records(self) -> dict:
+        """
+        Return the baseline _records structure used when creating a new database
+        or resetting an existing one. Contains a _config entry and an empty
+        default collection.
+        """
         return {
             "_config": {
                 "dimensions": self.dimensions,
                 "auto_dim": self.auto_dim,
                 "auto_persist": self.auto_persist,
-                # Stores the index type chosen per collection so _rebuild_indexes
-                # can restore the correct class after a reload.
                 "_collection_indexes": {
                     "default": "default"
                 }
@@ -544,26 +533,25 @@ class Database:
 
     def _rebuild_indexes(self) -> None:
         """
-        Rebuild all in-memory indexes from the current _records state.
+        Reconstruct all in-memory indexes from the current _records state.
 
-        The chosen index type per collection is read from
-        _config['_collection_indexes']. Collections not found there fall back
-        to "default". Wipes _indexes first to prevent double-adding vectors.
+        Reads the index type per collection from _config['_collection_indexes'],
+        falling back to "default" for any collection not listed or whose stored
+        index type no longer exists in the registry. Wipes _indexes first to
+        prevent vectors from being added twice.
         """
         self._indexes = {}
 
-        col_indexes: dict[str, str] = self._records.get(
-            "_config", {}
-        ).get("_collection_indexes", {})
+        col_indexes: dict[str, str] = (
+            self._records.get("_config", {}).get("_collection_indexes", {})
+        )
 
         for collection_name, collection in self._records.items():
             if collection_name == "_config":
                 continue
 
-            # Restore the correct index type; fall back to "default" safely.
             index_type = col_indexes.get(collection_name, "default")
 
-            # Guard against a stored type that no longer exists in the registry.
             if index_type not in self.INDEXES:
                 index_type = "default"
 
@@ -572,7 +560,126 @@ class Database:
             for record_id, record in collection.items():
                 self._indexes[collection_name].add(record_id, record.vector)
 
+    def _validate_index_schema(self, data: dict) -> None:
+        """
+        Validate that every record in the loaded data is a proper Record dataclass
+        instance with the correct field types and consistent embedding dimensions.
+
+        Checks performed per record:
+          - Must be an instance of Record (not a raw dict from a corrupt pickle).
+          - Must have non-empty string 'id' and 'name' fields.
+          - Must have a non-empty list 'vector' of floats or ints.
+          - Must have a dict 'metadata' field.
+          - Vector dimension must match self.dimensions if already set, or must be
+            consistent across all records in the same collection.
+
+        Raises:
+            TypeError:  if a record is not a Record instance.
+            ValueError: if a required field is missing, has the wrong type,
+                        or if vector dimensions are inconsistent.
+        """
+        config_dimensions: Optional[int] = (
+            data.get("_config", {}).get("dimensions", None)
+        )
+
+        for collection_name, collection in data.items():
+            if collection_name == "_config":
+                continue
+
+            if not isinstance(collection, dict):
+                raise TypeError(
+                    f"Collection '{collection_name}' must be a dict, "
+                    f"got {type(collection).__name__}."
+                )
+
+            observed_dim: Optional[int] = None
+
+            for record_id, record in collection.items():
+                # Each stored value must be a Record dataclass, not a raw dict.
+                if not isinstance(record, Record):
+                    raise TypeError(
+                        f"Record '{record_id}' in collection '{collection_name}' "
+                        f"must be a Record instance, got {type(record).__name__}. "
+                        f"The database file may be corrupt or was exported as JSON "
+                        f"without being re-imported correctly."
+                    )
+
+                # id
+                if not isinstance(record.id, str) or not record.id:
+                    raise ValueError(
+                        f"Record '{record_id}' in collection '{collection_name}' "
+                        f"has an invalid 'id': {record.id!r}."
+                    )
+
+                # name
+                if not isinstance(record.name, str) or not record.name:
+                    raise ValueError(
+                        f"Record '{record_id}' in collection '{collection_name}' "
+                        f"has an invalid 'name': {record.name!r}."
+                    )
+
+                # vector
+                if (
+                    not isinstance(record.vector, (list, tuple))
+                    or len(record.vector) == 0
+                ):
+                    raise ValueError(
+                        f"Record '{record_id}' in collection '{collection_name}' "
+                        f"has an invalid or empty 'vector'."
+                    )
+
+                if not all(isinstance(v, (int, float)) for v in record.vector):
+                    raise ValueError(
+                        f"Record '{record_id}' in collection '{collection_name}' "
+                        f"contains non-numeric values in 'vector'."
+                    )
+
+                # metadata
+                if not isinstance(record.metadata, dict):
+                    raise ValueError(
+                        f"Record '{record_id}' in collection '{collection_name}' "
+                        f"has an invalid 'metadata': expected dict, "
+                        f"got {type(record.metadata).__name__}."
+                    )
+
+                # Dimension consistency — first check against the config value,
+                # then against the first vector seen in this collection.
+                record_dim = len(record.vector)
+
+                if config_dimensions is not None and record_dim != config_dimensions:
+                    raise ValueError(
+                        f"Record '{record_id}' in collection '{collection_name}' "
+                        f"has vector dimension {record_dim}, but config declares "
+                        f"dimensions={config_dimensions}."
+                    )
+
+                if observed_dim is None:
+                    observed_dim = record_dim
+                elif record_dim != observed_dim:
+                    raise ValueError(
+                        f"Inconsistent vector dimensions in collection "
+                        f"'{collection_name}': expected {observed_dim}, "
+                        f"got {record_dim} for record '{record_id}'."
+                    )
+
     def _load_doc(self) -> None:
+        """
+        Load the database from disk.
+
+        Behaviour:
+          - If no file exists at _path, initialises a fresh default database
+            and returns.
+          - Otherwise deserialises _records from the pickle file and validates
+            the schema via _validate_index_schema.
+          - If a provided_index_path ending in '.index' is given, loads that
+            external index file for the provided_index_collection instead of
+            rebuilding it from scratch.
+          - If no external index path is given, calls _rebuild_indexes to
+            reconstruct all in-memory indexes from _records.
+          - On EOFError (empty/truncated file), silently resets to defaults.
+          - On any other exception, resets to defaults and re-raises as
+            RuntimeError to surface the underlying cause to the caller.
+        """
         if not os.path.exists(self._path):
             self._records = self._default_records()
             self._rebuild_indexes()
@@ -580,12 +687,46 @@ class Database:
 
         try:
             with open(self._path, "rb") as f:
-                self._records = pickle.load(f)
-            self._rebuild_indexes()
+                loaded: dict[str, dict[str, Record]] = pickle.load(f)
+
+            # Validate the deserialized data before accepting it.
+            self._validate_index_schema(loaded)
+
+            # Accept the validated data.
+            self._records = loaded
+
+            # Sync instance-level dimension from config if not already set.
+            stored_dim = self._records.get("_config", {}).get("dimensions", None)
+            if self.dimensions is None and stored_dim is not None:
+                self.dimensions = stored_dim
+
+            if (
+                self.provided_index_path
+                and self.provided_index_collection
+                and self.provided_index_path.endswith(".index")
+            ):
+                # Rebuild all indexes first so every collection has an index
+                # object, then overwrite just the requested collection's index
+                # with the pre-saved file.
+                self._rebuild_indexes()
+                self._load_index(
+                    collection=self.provided_index_collection,
+                    path=self.provided_index_path
+                )
+            else:
+                self._rebuild_indexes()
 
         except EOFError:
             self._records = self._default_records()
             self._rebuild_indexes()
+
+        except (TypeError, ValueError) as e:
+            # Schema validation failure — reset to defaults and surface the error.
+            self._records = self._default_records()
+            self._rebuild_indexes()
+            raise RuntimeError(
+                f"Database schema validation failed for '{self._path}': {e}"
+            ) from e
 
         except Exception as e:
             self._records = self._default_records()
@@ -598,59 +739,48 @@ class Database:
     # Statistics
     # ==========================================================
 
-    def collection_stats(
-        self,
-        collection: str = "default"
-    ) -> dict[str, Any]:
-
+    def collection_stats(self, collection: str = "default") -> dict[str, Any]:
+        """
+        Return statistics for a single collection: document count,
+        average vector dimension, and the index type in use.
+        """
         self._validate_collection(collection)
 
-        total_docs = 0
-        dimensions = []
+        dimensions = [
+            len(record.vector)
+            for record in self._records[collection].values()
+        ]
 
-        for record in self._records[collection].values():
-            total_docs += 1
-            dimensions.append(len(record.vector))
-
-        avg_dim = (
-            sum(dimensions) / len(dimensions)
-            if dimensions
-            else 0
-        )
+        avg_dim = sum(dimensions) / len(dimensions) if dimensions else 0
 
         col_indexes = self._records["_config"].get("_collection_indexes", {})
 
         return {
             "collection": collection,
-            "documents": total_docs,
+            "documents": len(dimensions),
             "average_dimension": avg_dim,
             "index_type": col_indexes.get(collection, "default")
         }
 
-    def stats(
-        self
-    ) -> dict[str, Any]:
-
-        total_docs = 0
-        dimensions = []
+    def stats(self) -> dict[str, Any]:
+        """
+        Return aggregate statistics for the entire database: total collection
+        count, total document count, average vector dimension across all
+        collections, and the file path of the database on disk.
+        """
+        all_dims = []
 
         for collection_name, collection in self._records.items():
             if collection_name == "_config":
                 continue
-
             for record in collection.values():
-                total_docs += 1
-                dimensions.append(len(record.vector))
+                all_dims.append(len(record.vector))
 
-        avg_dim = (
-            sum(dimensions) / len(dimensions)
-            if dimensions
-            else 0
-        )
+        avg_dim = sum(all_dims) / len(all_dims) if all_dims else 0
 
         return {
-            "collections": len(self._records) - 1,  # exclude _config
-            "documents": total_docs,
+            "collections": len(self._records) - 1,
+            "documents": len(all_dims),
             "average_dimension": avg_dim,
             "database_path": self._path
         }
@@ -660,6 +790,7 @@ class Database:
     # ==========================================================
 
     def __len__(self) -> int:
+        """Return the total number of records across all collections."""
         return sum(
             len(collection)
             for name, collection in self._records.items()
@@ -667,6 +798,7 @@ class Database:
         )
 
     def __contains__(self, id: str) -> bool:
+        """Return True if the given record id exists in any collection."""
         return any(
             id in collection
             for name, collection in self._records.items()
@@ -674,6 +806,7 @@ class Database:
         )
 
     def __repr__(self) -> str:
+        """Return a concise string representation of the Database instance."""
         return (
             f"Database("
             f"name='{self.db_name}', "
@@ -688,7 +821,9 @@ class Database:
 
     def _validate_consistent_format(self, data: dict) -> None:
         """
-        Validate that all records in the given data dict have consistent format.
+        Validate that all records in the given raw dict (as loaded from JSON)
+        are plain dicts with the required keys: id, vector, and metadata.
+        Used before importing from a JSON export.
         """
         for collection_name, collection in data.items():
             if collection_name == "_config":
@@ -705,12 +840,10 @@ class Database:
 
     def import_from_json(self, json_path: str) -> None:
         """
-        Import database from JSON file.
-
-        Args:
-            json_path: Path to JSON file to import from
+        Import records from a JSON file produced by export_to_json.
+        Merges collections from the file into the current database,
+        restoring the correct index type per collection from _config.
         """
-
         if not os.path.exists(json_path):
             raise FileNotFoundError(f"JSON file not found: {json_path}")
 
@@ -724,9 +857,9 @@ class Database:
             self.auto_dim = data["_config"].get("auto_dim", self.auto_dim)
             self.auto_persist = data["_config"].get("auto_persist", self.auto_persist)
             self._records["_config"] = data["_config"]
-
-            # Ensure _collection_indexes key always exists after config merge.
-            self._records["_config"].setdefault("_collection_indexes", {"default": "default"})
+            self._records["_config"].setdefault(
+                "_collection_indexes", {"default": "default"}
+            )
 
         col_indexes = self._records["_config"].get("_collection_indexes", {})
 
@@ -736,7 +869,6 @@ class Database:
 
             self._records.setdefault(collection_name, {})
 
-            # Restore the correct index type for the imported collection.
             index_type = col_indexes.get(collection_name, "default")
             if index_type not in self.INDEXES:
                 index_type = "default"
@@ -759,12 +891,10 @@ class Database:
 
     def export_to_json(self, json_path: str) -> None:
         """
-        Export database to JSON file.
-
-        Args:
-            json_path: Path to JSON file to export to
+        Serialise the entire database to a human-readable JSON file.
+        Raises FileExistsError if the target path already exists.
+        Record dataclasses are converted to dicts via dataclasses.asdict.
         """
-
         if os.path.exists(json_path):
             raise FileExistsError(f"JSON file already exists: {json_path}")
 
@@ -773,7 +903,9 @@ class Database:
                 self._records,
                 f,
                 indent=4,
-                default=lambda o: dataclasses.asdict(o) if dataclasses.is_dataclass(o) else o
+                default=lambda o: (
+                    dataclasses.asdict(o) if dataclasses.is_dataclass(o) else o
+                )
             )
 
     # ==========================================================
@@ -786,16 +918,12 @@ class Database:
         collection: str = "default"
     ) -> List[str]:
         """
-        Batch insert documents into the database.
-
-        Args:
-            objects: List of (name, vector, metadata) tuples
-            collection: Collection name to insert into
-
-        Returns:
-            List of inserted record IDs in the same order as input
+        Insert multiple records into a collection in one call.
+        Accepts a list of (name, vector, metadata) tuples.
+        Validates dimensions for each record and persists only once at the end,
+        rather than once per record, to avoid repeated disk writes.
+        Returns a list of UUIDs in the same order as the input list.
         """
-
         if not objects:
             raise ValueError("objects must not be empty.")
 
@@ -832,28 +960,20 @@ class Database:
             self._indexes[collection].add(record_id, vector)
             record_ids.append(record_id)
 
-        # Persist once after all inserts, not once per document.
         if self.auto_persist:
             self.persist_doc()
 
         return record_ids
 
-    
     # ==========================================================
-    # Index Import/Export
+    # Index Import / Export
     # ==========================================================
 
     def save_index(self, collection: str = "default", path: str = None) -> str:
         """
-        Save a collection's index to disk.
-
-        Args:
-            collection: Collection whose index to save
-            path:       File path to save to. Defaults to <db_name>_<collection>.index
-                        alongside the database file.
-
-        Returns:
-            The path the index was saved to.
+        Persist a collection's in-memory index to a binary .index file.
+        Defaults to <db_name>_<collection>.index alongside the database file.
+        Returns the path the index was saved to.
         """
         self._validate_collection(collection)
 
@@ -864,15 +984,11 @@ class Database:
         self._indexes[collection].save(path)
         return path
 
-
-    def load_index(self, collection: str = "default", path: str = None) -> None:
+    def _load_index(self, collection: str = "default", path: str = None) -> None:
         """
-        Load a collection's index from disk, replacing the current in-memory index.
-
-        Args:
-            collection: Collection whose index to replace
-            path:       File path to load from. Defaults to <db_name>_<collection>.index
-                        alongside the database file.
+        Replace a collection's current in-memory index with one loaded from disk.
+        Defaults to <db_name>_<collection>.index alongside the database file.
+        Raises FileNotFoundError if the index file does not exist.
         """
         self._validate_collection(collection)
 
