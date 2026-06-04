@@ -51,8 +51,26 @@ class Database:
         self.auto_dim = auto_dim
         self.auto_persist = auto_persist
 
-        self.provided_index_collection = kwargs.get("index_collection", "default")
-        self.provided_index_path = kwargs.get("index_path", None)
+        # index_paths: dict[collection_name, path_to_.index_file]
+        # Replaces the old single-collection index_collection / index_path kwargs.
+        # Backward-compat shim: if the caller still passes the old kwargs, fold
+        # them into the new dict so existing code doesn't break.
+        _legacy_col  = kwargs.get("index_collection", None)    # get the legacy collection name
+        _legacy_path = kwargs.get("index_path", None)          # get the legacy index path
+
+        provided: dict[str, str] = kwargs.get("index_paths", {})  # get the new index paths
+
+        if _legacy_col and _legacy_path and _legacy_col not in provided:
+            provided[_legacy_col] = _legacy_path
+
+        # Validate: every value must end with ".index".
+        for col, p in provided.items():
+            if not p.endswith(".index"):
+                raise ValueError(
+                    f"index_paths['{col}'] = '{p}' does not end with '.index'."
+                )
+
+        self.provided_index_paths: dict[str, str] = provided
 
         if not self.db_name.endswith(".db"):
             self.db_name += ".db"
@@ -250,8 +268,8 @@ class Database:
                 f"Collection '{target}' already exists."
             )
 
-        self._records[target] = self._records[source].copy()
-        self._indexes[target] = self._indexes[source].copy()
+        self._records[target] = self._records[source]
+        self._indexes[target] = self._indexes[source]
 
         col_indexes = self._records["_config"].get("_collection_indexes", {})
         if source in col_indexes:
@@ -671,11 +689,15 @@ class Database:
             and returns.
           - Otherwise deserialises _records from the pickle file and validates
             the schema via _validate_index_schema.
-          - If a provided_index_path ending in '.index' is given, loads that
-            external index file for the provided_index_collection instead of
-            rebuilding it from scratch.
-          - If no external index path is given, calls _rebuild_indexes to
-            reconstruct all in-memory indexes from _records.
+          - Calls _rebuild_indexes to reconstruct all in-memory indexes from
+            _records, giving every collection a correct index object first.
+          - If provided_index_paths is non-empty, iterates over each
+            (collection, path) pair and calls _load_index to overwrite the
+            just-rebuilt in-memory index with the pre-saved file. Collections
+            not listed in provided_index_paths keep their rebuilt index.
+            Unknown collection names are skipped with a warning rather than
+            raising, because the collection may not yet exist in the loaded
+            records (e.g. the file was deleted but the index file remains).
           - On EOFError (empty/truncated file), silently resets to defaults.
           - On any other exception, resets to defaults and re-raises as
             RuntimeError to surface the underlying cause to the caller.
@@ -700,21 +722,21 @@ class Database:
             if self.dimensions is None and stored_dim is not None:
                 self.dimensions = stored_dim
 
-            if (
-                self.provided_index_path
-                and self.provided_index_collection
-                and self.provided_index_path.endswith(".index")
-            ):
-                # Rebuild all indexes first so every collection has an index
-                # object, then overwrite just the requested collection's index
-                # with the pre-saved file.
-                self._rebuild_indexes()
-                self._load_index(
-                    collection=self.provided_index_collection,
-                    path=self.provided_index_path
-                )
-            else:
-                self._rebuild_indexes()
+            # Rebuild all indexes first so every collection has an index object.
+            self._rebuild_indexes()
+
+            # Overwrite indexes for any collections that have a pre-saved file.
+            for collection, path in self.provided_index_paths.items():
+                if collection not in self._records:
+                    import warnings
+                    warnings.warn(
+                        f"index_paths contains collection '{collection}' which "
+                        f"does not exist in the loaded database — skipping.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    continue
+                self._load_index(collection=collection, path=path)
 
         except EOFError:
             self._records = self._default_records()

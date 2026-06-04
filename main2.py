@@ -33,8 +33,7 @@ EMBEDDING_MODEL = "snowflake-arctic-embed:335m"
 def main():
     print("Hello from quantara!")
 
-    db = Database("my_database_v6", dimensions=1024, auto_persist=True)
-    db.load_index(path="my_database_v6.index")
+    db = Database("my_database_v6", dimensions=1024, auto_persist=True, index_paths={"default": "my_database_v6.index"})
 
     # for sent in sentences:
     #     embedded = ollama.embeddings(model=EMBEDDING_MODEL, prompt=sent)
@@ -57,7 +56,11 @@ def main():
     print(db.get_config())
     print(db.collection_stats())
 
-    db.export_to_json("my_database_v6.json")
+    db.save_index(
+        path="my_database_v6.index"
+    )
+
+    # db.export_to_json("my_database_v6.json")
 
     # db.save_index(
     #     path="my_database_v6.index"
