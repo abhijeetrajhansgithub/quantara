@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quantara"
-version = "0.1.0"
+version = "0.1.1"
 description = "A local-first vector database engine with pluggable indexes, collection management, metadata filtering, and vector similarity search."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -45,7 +45,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "numpy>=2.0.0"
+    "numpy>=1.0.0"
 ]
 
 [project.urls]
