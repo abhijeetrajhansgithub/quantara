@@ -31,19 +31,7 @@ from quantara.indexes.bruteforce import BruteForceIndex
 from quantara.indexes.registry import INDEX_REGISTRY
 
 
-@dataclass(slots=True)
-class Record:
-    id: str
-    name: str
-    vector: list[float]
-    metadata: dict[str, Any]
-
-
-@dataclass(slots=True)
-class Config:
-    dimensions: int | None
-    auto_dim: bool
-    auto_persist: bool
+from quantara.database.models import Record, Config
 
 
 class Database:

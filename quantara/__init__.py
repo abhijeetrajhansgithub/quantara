@@ -1,6 +1,6 @@
 # quantara/__init__.py
 
-from quantara.database.database_v5 import Database
+from quantara.database.database_v6 import Database
 
 from quantara.indexes.base import BaseIndex
 
