@@ -3,27 +3,21 @@ import json
 import pickle
 import dataclasses
 
-from typing import (
-    Any,
-    Optional,
-    Dict,
-    List,
-    Tuple
-)
+from typing import Any, Optional, Dict, List, Tuple
 from dataclasses import dataclass
 
 from quantara.utils.utils import (
     get_uuid,
     cosine_similarity,
     dot_similarity,
-    euclidean_distance
+    euclidean_distance,
 )
 
 from quantara.errors.errors import (
     CollectionNotFoundError,
     CollectionAlreadyExistsError,
     IndexNotFoundError,
-    EmbeddingDimensionError
+    EmbeddingDimensionError,
 )
 
 
@@ -49,7 +43,7 @@ class Database:
         db_name: str,
         dimensions: int | None = None,
         auto_dim: bool = True,
-        auto_persist: bool = True
+        auto_persist: bool = True,
     ):
 
         self.db_name = db_name
@@ -61,18 +55,15 @@ class Database:
             self.db_name += ".db"
 
         # FIX 3: Resolve path at instantiation time, not at module import time.
-        self._path = os.path.join(
-            os.getcwd(),
-            self.db_name
-        )
+        self._path = os.path.join(os.getcwd(), self.db_name)
 
         self._records: dict[str, dict[str, Record | Config]] = {
             "_config": {
                 "dimensions": self.dimensions,
                 "auto_dim": self.auto_dim,
-                "auto_persist": self.auto_persist
+                "auto_persist": self.auto_persist,
             },
-            "default": {}
+            "default": {},
         }
 
         self._load_doc()
@@ -81,21 +72,12 @@ class Database:
     # Internal Helpers
     # ==========================================================
 
-    def _validate_collection(
-        self,
-        collection: str
-    ) -> None:
+    def _validate_collection(self, collection: str) -> None:
 
         if collection not in self._records:
-            raise CollectionNotFoundError(
-                f"Collection '{collection}' not found."
-            )
+            raise CollectionNotFoundError(f"Collection '{collection}' not found.")
 
-    def _validate_doc(
-        self,
-        collection: str,
-        id: str
-    ) -> None:
+    def _validate_doc(self, collection: str, id: str) -> None:
 
         self._validate_collection(collection)
 
@@ -158,15 +140,10 @@ class Database:
     # Collections
     # ==========================================================
 
-    def create_collection(
-        self,
-        collection: str
-    ) -> None:
+    def create_collection(self, collection: str) -> None:
 
         if not isinstance(collection, str):
-            raise TypeError(
-                "Collection name must be a string."
-            )
+            raise TypeError("Collection name must be a string.")
 
         if collection in self._records:
             return
@@ -176,17 +153,12 @@ class Database:
         if self.auto_persist:
             self.persist_doc()
 
-    def delete_collection(
-        self,
-        collection: str
-    ) -> None:
+    def delete_collection(self, collection: str) -> None:
 
         assert collection != "_config", "Cannot delete config collection"
 
         if collection == "default":
-            raise RuntimeError(
-                "Default collection cannot be deleted."
-            )
+            raise RuntimeError("Default collection cannot be deleted.")
 
         self._validate_collection(collection)
 
@@ -195,18 +167,12 @@ class Database:
         if self.auto_persist:
             self.persist_doc()
 
-    def list_collections(
-        self
-    ) -> list[str]:
+    def list_collections(self) -> list[str]:
 
         # FIX 6: dict_keys - list raises TypeError; use a generator instead.
         return [k for k in self._records if k != "_config"]
 
-    def rename_collection(
-        self,
-        old_name: str,
-        new_name: str
-    ) -> None:
+    def rename_collection(self, old_name: str, new_name: str) -> None:
 
         self._validate_collection(old_name)
 
@@ -221,11 +187,7 @@ class Database:
         if self.auto_persist:
             self.persist_doc()
 
-    def clone_collection(
-        self,
-        source: str,
-        target: str
-    ) -> None:
+    def clone_collection(self, source: str, target: str) -> None:
 
         self._validate_collection(source)
 
@@ -249,7 +211,7 @@ class Database:
         vector: Optional[list[float]] = None,
         metadata: Optional[dict[str, Any]] = None,
         collection: str = "default",
-        **kwargs
+        **kwargs,
     ) -> str:
 
         self._validate_collection(collection)
@@ -267,9 +229,7 @@ class Database:
             missing_params.append("vector")
 
         if missing_params:
-            raise RuntimeError(
-                f"Missing parameters: {', '.join(missing_params)}"
-            )
+            raise RuntimeError(f"Missing parameters: {', '.join(missing_params)}")
 
         if self.dimensions is None:
             if self.auto_dim:
@@ -291,10 +251,7 @@ class Database:
         record_id = get_uuid()
 
         self._records[collection][record_id] = Record(
-            id=record_id,
-            name=_name,
-            vector=_vector,
-            metadata=_metadata or {}
+            id=record_id, name=_name, vector=_vector, metadata=_metadata or {}
         )
 
         if self.auto_persist:
@@ -302,11 +259,7 @@ class Database:
 
         return record_id
 
-    def delete_doc(
-        self,
-        id: str,
-        collection: str = "default"
-    ) -> None:
+    def delete_doc(self, id: str, collection: str = "default") -> None:
 
         self._validate_doc(collection, id)
 
@@ -321,7 +274,7 @@ class Database:
         collection: str = "default",
         name: Optional[str] = None,
         vector: Optional[list[float]] = None,
-        metadata: Optional[dict[str, Any]] = None
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
 
         # FIX 1: Validate that the document exists BEFORE checking dimensions.
@@ -355,11 +308,7 @@ class Database:
         if self.auto_persist:
             self.persist_doc()
 
-    def get_doc(
-        self,
-        id: str,
-        collection: str = "default"
-    ) -> Record:
+    def get_doc(self, id: str, collection: str = "default") -> Record:
 
         self._validate_doc(collection, id)
 
@@ -376,7 +325,7 @@ class Database:
         top_k: int = 3,
         return_text_outputs: bool = False,
         collection: str = "default",
-        metric: str = "cosine"
+        metric: str = "cosine",
     ):
 
         if self.dimensions is not None:
@@ -429,19 +378,13 @@ class Database:
     # Utility
     # ==========================================================
 
-    def list_docs(
-        self,
-        collection: str = "default"
-    ) -> list[str]:
+    def list_docs(self, collection: str = "default") -> list[str]:
 
         self._validate_collection(collection)
 
         return list(self._records[collection].keys())
 
-    def clear(
-        self,
-        collection: Optional[str] = None
-    ) -> None:
+    def clear(self, collection: Optional[str] = None) -> None:
 
         if collection is None:
             # FIX 8: Preserve _config so subsequent operations don't crash.
@@ -449,9 +392,9 @@ class Database:
                 "_config": {
                     "dimensions": self.dimensions,
                     "auto_dim": self.auto_dim,
-                    "auto_persist": self.auto_persist
+                    "auto_persist": self.auto_persist,
                 },
-                "default": {}
+                "default": {},
             }
         else:
             self._validate_collection(collection)
@@ -464,30 +407,22 @@ class Database:
     # Persistence
     # ==========================================================
 
-    def persist_doc(
-        self
-    ) -> None:
+    def persist_doc(self) -> None:
 
         # FIX 4: Raise on failure instead of silently swallowing errors.
         with open(self._path, "wb") as f:
-            pickle.dump(
-                self._records,
-                f,
-                protocol=pickle.HIGHEST_PROTOCOL
-            )
+            pickle.dump(self._records, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def _load_doc(
-        self
-    ) -> None:
+    def _load_doc(self) -> None:
 
         if not os.path.exists(self._path):
             self._records = {
                 "_config": {
                     "dimensions": self.dimensions,
                     "auto_dim": self.auto_dim,
-                    "auto_persist": self.auto_persist
+                    "auto_persist": self.auto_persist,
                 },
-                "default": {}
+                "default": {},
             }
             return
 
@@ -500,9 +435,9 @@ class Database:
                 "_config": {
                     "dimensions": self.dimensions,
                     "auto_dim": self.auto_dim,
-                    "auto_persist": self.auto_persist
+                    "auto_persist": self.auto_persist,
                 },
-                "default": {}
+                "default": {},
             }
 
         except Exception as e:
@@ -510,11 +445,11 @@ class Database:
                 "_config": {
                     "dimensions": self.dimensions,
                     "auto_dim": self.auto_dim,
-                    "auto_persist": self.auto_persist
+                    "auto_persist": self.auto_persist,
                 },
-                "default": {}
+                "default": {},
             }
-            
+
             raise RuntimeError(
                 f"Failed to load database from '{self._path}': {e}"
             ) from e
@@ -523,34 +458,25 @@ class Database:
     # Statistics
     # ==========================================================
 
-    def collection_stats(
-        self,
-        collection: str = "default"
-    ) -> dict[str, Any]:
+    def collection_stats(self, collection: str = "default") -> dict[str, Any]:
         self._validate_collection(collection)
-        
+
         total_docs = 0
         dimensions = []
-        
+
         for record in self._records[collection].values():
             total_docs += 1
             dimensions.append(len(record.vector))
-        
-        avg_dim = (
-            sum(dimensions) / len(dimensions)
-            if dimensions
-            else 0
-        )
-        
+
+        avg_dim = sum(dimensions) / len(dimensions) if dimensions else 0
+
         return {
             "collection": collection,
             "documents": total_docs,
-            "average_dimension": avg_dim
+            "average_dimension": avg_dim,
         }
 
-    def stats(
-        self
-    ) -> dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
 
         total_docs = 0
         dimensions = []
@@ -564,17 +490,13 @@ class Database:
                 total_docs += 1
                 dimensions.append(len(record.vector))
 
-        avg_dim = (
-            sum(dimensions) / len(dimensions)
-            if dimensions
-            else 0
-        )
+        avg_dim = sum(dimensions) / len(dimensions) if dimensions else 0
 
         return {
             "collections": len(self._records) - 1,  # exclude _config
             "documents": total_docs,
             "average_dimension": avg_dim,
-            "database_path": self._path
+            "database_path": self._path,
         }
 
     # ==========================================================
@@ -641,7 +563,7 @@ class Database:
             raise FileNotFoundError(f"JSON file not found: {json_path}")
 
         # FIX 3a: json was never imported — added at the top of the file.
-        with open(json_path, 'r') as f:
+        with open(json_path, "r") as f:
             data = json.load(f)
 
         # FIX: Validate the freshly-loaded data, not self._records.
@@ -667,7 +589,7 @@ class Database:
                     id=record_data["id"],
                     name=record_data["name"],
                     vector=record_data["vector"],
-                    metadata=record_data["metadata"]
+                    metadata=record_data["metadata"],
                 )
 
         if self.auto_persist:
@@ -687,15 +609,16 @@ class Database:
         # FIX 3b: json was never imported — added at the top of the file.
         # FIX 4b: Record dataclasses are not JSON-serializable by default;
         # use dataclasses.asdict() via a custom default serializer.
-        with open(json_path, 'w') as f:
+        with open(json_path, "w") as f:
             json.dump(
                 self._records,
                 f,
                 indent=4,
-                default=lambda o: dataclasses.asdict(o) if dataclasses.is_dataclass(o) else o
+                default=lambda o: (
+                    dataclasses.asdict(o) if dataclasses.is_dataclass(o) else o
+                ),
             )
 
-    
     # ==========================================================
     # Batch Management
     # ==========================================================
@@ -703,7 +626,7 @@ class Database:
     def batch_insert_docs(
         self,
         objects: List[Tuple[str, list[float], dict[str, Any]]],
-        collection: str = "default"
+        collection: str = "default",
     ) -> List[str]:
         """
         Batch insert documents into the database.
@@ -744,10 +667,7 @@ class Database:
                 )
 
             self._records[collection][record_id] = Record(
-                id=record_id,
-                name=name,
-                vector=vector,
-                metadata=metadata or {}
+                id=record_id, name=name, vector=vector, metadata=metadata or {}
             )
 
             record_ids.append(record_id)
@@ -757,4 +677,3 @@ class Database:
             self.persist_doc()
 
         return record_ids
-        

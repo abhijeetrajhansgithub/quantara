@@ -37,9 +37,7 @@ class OllamaEmbedding:
                     "e5",
                 )
             ):
-                raise ValueError(
-                    f"'{model}' does not appear to be an embedding model."
-                )
+                raise ValueError(f"'{model}' does not appear to be an embedding model.")
 
     def _model_exists(self, model: str) -> bool:
         try:
@@ -52,9 +50,7 @@ class OllamaEmbedding:
             return False
 
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to check installed Ollama models: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to check installed Ollama models: {e}") from e
 
     def _pull_models(self, models: List[str]) -> None:
         for model in models:

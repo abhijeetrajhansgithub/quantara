@@ -3,28 +3,21 @@ import json
 import pickle
 import dataclasses
 
-from typing import (
-    Any,
-    Optional,
-    Dict,
-    List,
-    Tuple,
-    Literal
-)
+from typing import Any, Optional, Dict, List, Tuple, Literal
 from dataclasses import dataclass
 
 from quantara.utils.utils import (
     get_uuid,
     cosine_similarity,
     dot_similarity,
-    euclidean_distance
+    euclidean_distance,
 )
 
 from quantara.errors.errors import (
     CollectionNotFoundError,
     CollectionAlreadyExistsError,
     IndexNotFoundError,
-    EmbeddingDimensionError
+    EmbeddingDimensionError,
 )
 
 from quantara.indexes.bruteforce import BruteForceIndex
@@ -44,7 +37,7 @@ class Database:
         dimensions: int | None = None,
         auto_dim: bool = True,
         auto_persist: bool = True,
-        **kwargs
+        **kwargs,
     ):
         self.db_name = db_name
         self.dimensions = dimensions
@@ -55,10 +48,14 @@ class Database:
         # Replaces the old single-collection index_collection / index_path kwargs.
         # Backward-compat shim: if the caller still passes the old kwargs, fold
         # them into the new dict so existing code doesn't break.
-        _legacy_col  = kwargs.get("index_collection", None)    # get the legacy collection name
-        _legacy_path = kwargs.get("index_path", None)          # get the legacy index path
+        _legacy_col = kwargs.get(
+            "index_collection", None
+        )  # get the legacy collection name
+        _legacy_path = kwargs.get("index_path", None)  # get the legacy index path
 
-        provided: dict[str, str] = kwargs.get("index_paths", {})  # get the new index paths
+        provided: dict[str, str] = kwargs.get(
+            "index_paths", {}
+        )  # get the new index paths
 
         if _legacy_col and _legacy_path and _legacy_col not in provided:
             provided[_legacy_col] = _legacy_path
@@ -89,9 +86,7 @@ class Database:
     def _validate_collection(self, collection: str) -> None:
         """Raise CollectionNotFoundError if the given collection does not exist in _records."""
         if collection not in self._records:
-            raise CollectionNotFoundError(
-                f"Collection '{collection}' not found."
-            )
+            raise CollectionNotFoundError(f"Collection '{collection}' not found.")
 
     def _validate_doc(self, collection: str, id: str) -> None:
         """Raise CollectionNotFoundError or IndexNotFoundError if the collection or record id is missing."""
@@ -179,9 +174,7 @@ class Database:
     # ==========================================================
 
     def create_collection(
-        self,
-        collection: str,
-        index: Literal["default", "bruteforce"] | str = "default"
+        self, collection: str, index: Literal["default", "bruteforce"] | str = "default"
     ) -> None:
         """
         Create a new named collection with the specified index type.
@@ -199,7 +192,9 @@ class Database:
         self._records[collection] = {}
         self._indexes[collection] = self.INDEXES[index]()
 
-        self._records["_config"].setdefault("_collection_indexes", {})[collection] = index
+        self._records["_config"].setdefault("_collection_indexes", {})[
+            collection
+        ] = index
 
         if self.auto_persist:
             self.persist_doc()
@@ -264,9 +259,7 @@ class Database:
         self._validate_collection(source)
 
         if target in self._records:
-            raise CollectionAlreadyExistsError(
-                f"Collection '{target}' already exists."
-            )
+            raise CollectionAlreadyExistsError(f"Collection '{target}' already exists.")
 
         self._records[target] = self._records[source]
         self._indexes[target] = self._indexes[source]
@@ -288,7 +281,7 @@ class Database:
         vector: Optional[list[float]] = None,
         metadata: Optional[dict[str, Any]] = None,
         collection: str = "default",
-        **kwargs
+        **kwargs,
     ) -> str:
         """
         Insert a single record into the given collection.
@@ -309,9 +302,7 @@ class Database:
             missing_params.append("vector")
 
         if missing_params:
-            raise RuntimeError(
-                f"Missing parameters: {', '.join(missing_params)}"
-            )
+            raise RuntimeError(f"Missing parameters: {', '.join(missing_params)}")
 
         if self.dimensions is None:
             if self.auto_dim:
@@ -332,10 +323,7 @@ class Database:
         record_id = get_uuid()
 
         self._records[collection][record_id] = Record(
-            id=record_id,
-            name=_name,
-            vector=_vector,
-            metadata=_metadata or {}
+            id=record_id, name=_name, vector=_vector, metadata=_metadata or {}
         )
 
         self._indexes[collection].add(record_id, _vector)
@@ -364,7 +352,7 @@ class Database:
         collection: str = "default",
         name: Optional[str] = None,
         vector: Optional[list[float]] = None,
-        metadata: Optional[dict[str, Any]] = None
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """
         Update one or more fields of an existing record.
@@ -417,7 +405,7 @@ class Database:
         return_text_outputs: bool = False,
         collection: str = "default",
         metric: str = "cosine",
-        basic: bool = True
+        basic: bool = True,
     ):
         """
         Search for the top-k nearest records to input_vector in the given collection.
@@ -445,9 +433,7 @@ class Database:
 
             for record_id, record in self._records[collection].items():
                 if filters is not None:
-                    valid = all(
-                        record.metadata.get(k) == v for k, v in filters.items()
-                    )
+                    valid = all(record.metadata.get(k) == v for k, v in filters.items())
                     if not valid:
                         continue
 
@@ -470,9 +456,7 @@ class Database:
 
         else:
             results = self._indexes[collection].search(
-                query_vector=input_vector,
-                top_k=top_k,
-                metric=metric
+                query_vector=input_vector, top_k=top_k, metric=metric
             )
 
             final_results = []
@@ -481,9 +465,7 @@ class Database:
                 record = self._records[collection][record_id]
 
                 if filters is not None:
-                    valid = all(
-                        record.metadata.get(k) == v for k, v in filters.items()
-                    )
+                    valid = all(record.metadata.get(k) == v for k, v in filters.items())
                     if not valid:
                         continue
 
@@ -542,11 +524,9 @@ class Database:
                 "dimensions": self.dimensions,
                 "auto_dim": self.auto_dim,
                 "auto_persist": self.auto_persist,
-                "_collection_indexes": {
-                    "default": "default"
-                }
+                "_collection_indexes": {"default": "default"},
             },
-            "default": {}
+            "default": {},
         }
 
     def _rebuild_indexes(self) -> None:
@@ -560,8 +540,8 @@ class Database:
         """
         self._indexes = {}
 
-        col_indexes: dict[str, str] = (
-            self._records.get("_config", {}).get("_collection_indexes", {})
+        col_indexes: dict[str, str] = self._records.get("_config", {}).get(
+            "_collection_indexes", {}
         )
 
         for collection_name, collection in self._records.items():
@@ -596,8 +576,8 @@ class Database:
             ValueError: if a required field is missing, has the wrong type,
                         or if vector dimensions are inconsistent.
         """
-        config_dimensions: Optional[int] = (
-            data.get("_config", {}).get("dimensions", None)
+        config_dimensions: Optional[int] = data.get("_config", {}).get(
+            "dimensions", None
         )
 
         for collection_name, collection in data.items():
@@ -729,6 +709,7 @@ class Database:
             for collection, path in self.provided_index_paths.items():
                 if collection not in self._records:
                     import warnings
+
                     warnings.warn(
                         f"index_paths contains collection '{collection}' which "
                         f"does not exist in the loaded database — skipping.",
@@ -769,8 +750,7 @@ class Database:
         self._validate_collection(collection)
 
         dimensions = [
-            len(record.vector)
-            for record in self._records[collection].values()
+            len(record.vector) for record in self._records[collection].values()
         ]
 
         avg_dim = sum(dimensions) / len(dimensions) if dimensions else 0
@@ -781,7 +761,7 @@ class Database:
             "collection": collection,
             "documents": len(dimensions),
             "average_dimension": avg_dim,
-            "index_type": col_indexes.get(collection, "default")
+            "index_type": col_indexes.get(collection, "default"),
         }
 
     def stats(self) -> dict[str, Any]:
@@ -804,7 +784,7 @@ class Database:
             "collections": len(self._records) - 1,
             "documents": len(all_dims),
             "average_dimension": avg_dim,
-            "database_path": self._path
+            "database_path": self._path,
         }
 
     # ==========================================================
@@ -869,7 +849,7 @@ class Database:
         if not os.path.exists(json_path):
             raise FileNotFoundError(f"JSON file not found: {json_path}")
 
-        with open(json_path, 'r') as f:
+        with open(json_path, "r") as f:
             data = json.load(f)
 
         self._validate_consistent_format(data)
@@ -895,16 +875,14 @@ class Database:
             if index_type not in self.INDEXES:
                 index_type = "default"
 
-            self._indexes.setdefault(
-                collection_name, self.INDEXES[index_type]()
-            )
+            self._indexes.setdefault(collection_name, self.INDEXES[index_type]())
 
             for record_id, record_data in collection.items():
                 self._records[collection_name][record_id] = Record(
                     id=record_data["id"],
                     name=record_data["name"],
                     vector=record_data["vector"],
-                    metadata=record_data["metadata"]
+                    metadata=record_data["metadata"],
                 )
                 self._indexes[collection_name].add(record_id, record_data["vector"])
 
@@ -920,14 +898,14 @@ class Database:
         if os.path.exists(json_path):
             raise FileExistsError(f"JSON file already exists: {json_path}")
 
-        with open(json_path, 'w') as f:
+        with open(json_path, "w") as f:
             json.dump(
                 self._records,
                 f,
                 indent=4,
                 default=lambda o: (
                     dataclasses.asdict(o) if dataclasses.is_dataclass(o) else o
-                )
+                ),
             )
 
     # ==========================================================
@@ -937,7 +915,7 @@ class Database:
     def batch_insert_docs(
         self,
         objects: List[Tuple[str, list[float], dict[str, Any]]],
-        collection: str = "default"
+        collection: str = "default",
     ) -> List[str]:
         """
         Insert multiple records into a collection in one call.
@@ -973,10 +951,7 @@ class Database:
                 )
 
             self._records[collection][record_id] = Record(
-                id=record_id,
-                name=name,
-                vector=vector,
-                metadata=metadata or {}
+                id=record_id, name=name, vector=vector, metadata=metadata or {}
             )
 
             self._indexes[collection].add(record_id, vector)

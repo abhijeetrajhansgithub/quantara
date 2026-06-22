@@ -6,16 +6,16 @@ from quantara.indexes.base import BaseIndex
 
 from quantara.embed.ollama_embed import OllamaEmbedding
 
+from quantara.docs.docs import get_readme
+
 from quantara.indexes.registry import (
     register_index,
     unregister_index,
     get_index,
-    list_indexes
+    list_indexes,
 )
 
-from quantara.indexes.builtin import (
-    load_builtin_indexes
-)
+from quantara.indexes.builtin import load_builtin_indexes
 
 load_builtin_indexes()
 
@@ -26,5 +26,6 @@ __all__ = [
     "register_index",
     "unregister_index",
     "get_index",
-    "list_indexes"
+    "list_indexes",
+    "get_readme",
 ]

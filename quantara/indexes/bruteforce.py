@@ -1,74 +1,40 @@
 from typing import Any
 
 from quantara.indexes.base import BaseIndex
-from quantara.utils.utils import (
-    cosine_similarity,
-    dot_similarity,
-    euclidean_distance
-)
+from quantara.utils.utils import cosine_similarity, dot_similarity, euclidean_distance
 
 
 class BruteForceIndex(BaseIndex):
 
-    def __init__(
-        self
-    ) -> None:
+    def __init__(self) -> None:
 
-        self._vectors: dict[
-            str,
-            list[float]
-        ] = {}
+        self._vectors: dict[str, list[float]] = {}
 
     # ==========================================================
     # Build
     # ==========================================================
 
-    def build(
-        self,
-        vectors: dict[
-            str,
-            list[float]
-        ]
-    ) -> None:
+    def build(self, vectors: dict[str, list[float]]) -> None:
 
-        self._vectors = dict(
-            vectors
-        )
+        self._vectors = dict(vectors)
 
     # ==========================================================
     # CRUD
     # ==========================================================
 
-    def add(
-        self,
-        record_id: str,
-        vector: list[float]
-    ) -> None:
+    def add(self, record_id: str, vector: list[float]) -> None:
 
-        self._vectors[
-            record_id
-        ] = vector
+        self._vectors[record_id] = vector
 
-    def remove(
-        self,
-        record_id: str
-    ) -> None:
+    def remove(self, record_id: str) -> None:
 
         if record_id in self._vectors:
 
-            del self._vectors[
-                record_id
-            ]
+            del self._vectors[record_id]
 
-    def update(
-        self,
-        record_id: str,
-        vector: list[float]
-    ) -> None:
+    def update(self, record_id: str, vector: list[float]) -> None:
 
-        self._vectors[
-            record_id
-        ] = vector
+        self._vectors[record_id] = vector
 
     # ==========================================================
     # Search
@@ -79,155 +45,85 @@ class BruteForceIndex(BaseIndex):
         query_vector: list[float],
         top_k: int = 3,
         metric: str = "cosine",
-        **kwargs: Any
-    ) -> list[
-        tuple[str, float]
-    ]:
+        **kwargs: Any,
+    ) -> list[tuple[str, float]]:
 
-        scores: list[
-            tuple[str, float]
-        ] = []
+        scores: list[tuple[str, float]] = []
 
-        for (
-            record_id,
-            vector
-        ) in self._vectors.items():
+        for record_id, vector in self._vectors.items():
 
             if metric == "cosine":
 
-                score = cosine_similarity(
-                    query_vector,
-                    vector
-                )
+                score = cosine_similarity(query_vector, vector)
 
             elif metric == "dot":
 
-                score = dot_similarity(
-                    query_vector,
-                    vector
-                )
+                score = dot_similarity(query_vector, vector)
 
             elif metric == "euclidean":
 
-                score = euclidean_distance(
-                    query_vector,
-                    vector
-                )
+                score = euclidean_distance(query_vector, vector)
 
             else:
 
-                raise ValueError(
-                    f"Unknown metric: {metric}"
-                )
+                raise ValueError(f"Unknown metric: {metric}")
 
-            scores.append(
-                (
-                    record_id,
-                    score
-                )
-            )
+            scores.append((record_id, score))
 
         if metric == "euclidean":
 
-            scores.sort(
-                key=lambda x: x[1]
-            )
+            scores.sort(key=lambda x: x[1])
 
         else:
 
-            scores.sort(
-                key=lambda x: x[1],
-                reverse=True
-            )
+            scores.sort(key=lambda x: x[1], reverse=True)
 
-        return scores[
-            :top_k
-        ]
+        return scores[:top_k]
 
     # ==========================================================
     # Utility
     # ==========================================================
 
-    def clear(
-        self
-    ) -> None:
+    def clear(self) -> None:
 
         self._vectors.clear()
 
-    def size(
-        self
-    ) -> int:
+    def size(self) -> int:
 
-        return len(
-            self._vectors
-        )
+        return len(self._vectors)
 
     # ==========================================================
     # Persistence
     # ==========================================================
 
-    def save(
-        self,
-        path: str
-    ) -> None:
+    def save(self, path: str) -> None:
 
         import pickle
 
-        with open(
-            path,
-            "wb"
-        ) as f:
+        with open(path, "wb") as f:
 
-            pickle.dump(
-                self._vectors,
-                f,
-                protocol=pickle.HIGHEST_PROTOCOL
-            )
+            pickle.dump(self._vectors, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def load(
-        self,
-        path: str
-    ) -> None:
+    def load(self, path: str) -> None:
 
         import pickle
 
-        with open(
-            path,
-            "rb"
-        ) as f:
+        with open(path, "rb") as f:
 
-            self._vectors = pickle.load(
-                f
-            )
+            self._vectors = pickle.load(f)
 
     # ==========================================================
     # Magic Methods
     # ==========================================================
 
-    def __len__(
-        self
-    ) -> int:
+    def __len__(self) -> int:
 
-        return len(
-            self._vectors
-        )
+        return len(self._vectors)
 
-    def __contains__(
-        self,
-        record_id: str
-    ) -> bool:
+    def __contains__(self, record_id: str) -> bool:
 
-        return (
-            record_id
-            in self._vectors
-        )
+        return record_id in self._vectors
 
-    def __repr__(
-        self
-    ) -> str:
+    def __repr__(self) -> str:
 
-        return (
-            f"BruteForceIndex("
-            f"vectors={len(self)}"
-            f")"
-        )
+        return f"BruteForceIndex(" f"vectors={len(self)}" f")"

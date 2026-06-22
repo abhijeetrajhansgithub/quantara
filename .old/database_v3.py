@@ -4,15 +4,12 @@ import pickle
 from typing import Any, Optional, Dict
 from dataclasses import dataclass
 
-from quantara.utils.utils import (
-    get_uuid,
-    cosine_similarity
-)
+from quantara.utils.utils import get_uuid, cosine_similarity
 
 from quantara.errors.errors import (
     CollectionNotFoundError,
     IndexNotFoundError,
-    EmbeddingDimensionError
+    EmbeddingDimensionError,
 )
 
 
@@ -31,7 +28,7 @@ class Database:
         db_name: str,
         dimensions: int | None = None,
         auto_dim: bool = True,
-        auto_persist: bool = True
+        auto_persist: bool = True,
     ):
 
         self.db_name = db_name
@@ -46,14 +43,9 @@ class Database:
         # Using a module-level os.getcwd() means the path is frozen to wherever
         # Python was when the module was first imported, which breaks if the
         # process later calls os.chdir().
-        self._path = os.path.join(
-            os.getcwd(),
-            self.db_name
-        )
+        self._path = os.path.join(os.getcwd(), self.db_name)
 
-        self._records: dict[str, dict[str, Record]] = {
-            "default": {}
-        }
+        self._records: dict[str, dict[str, Record]] = {"default": {}}
 
         self._load_doc()
 
@@ -61,21 +53,12 @@ class Database:
     # Internal Helpers
     # ==========================================================
 
-    def _validate_collection(
-        self,
-        collection: str
-    ) -> None:
+    def _validate_collection(self, collection: str) -> None:
 
         if collection not in self._records:
-            raise CollectionNotFoundError(
-                f"Collection '{collection}' not found."
-            )
+            raise CollectionNotFoundError(f"Collection '{collection}' not found.")
 
-    def _validate_doc(
-        self,
-        collection: str,
-        id: str
-    ) -> None:
+    def _validate_doc(self, collection: str, id: str) -> None:
 
         self._validate_collection(collection)
 
@@ -88,15 +71,10 @@ class Database:
     # Collections
     # ==========================================================
 
-    def create_collection(
-        self,
-        collection: str
-    ) -> None:
+    def create_collection(self, collection: str) -> None:
 
         if not isinstance(collection, str):
-            raise TypeError(
-                "Collection name must be a string."
-            )
+            raise TypeError("Collection name must be a string.")
 
         if collection in self._records:
             return
@@ -106,15 +84,10 @@ class Database:
         if self.auto_persist:
             self.persist_doc()
 
-    def delete_collection(
-        self,
-        collection: str
-    ) -> None:
+    def delete_collection(self, collection: str) -> None:
 
         if collection == "default":
-            raise RuntimeError(
-                "Default collection cannot be deleted."
-            )
+            raise RuntimeError("Default collection cannot be deleted.")
 
         self._validate_collection(collection)
 
@@ -123,9 +96,7 @@ class Database:
         if self.auto_persist:
             self.persist_doc()
 
-    def list_collections(
-        self
-    ) -> list[str]:
+    def list_collections(self) -> list[str]:
 
         return list(self._records.keys())
 
@@ -139,7 +110,7 @@ class Database:
         vector: Optional[list[float]] = None,
         metadata: Optional[dict[str, Any]] = None,
         collection: str = "default",
-        **kwargs
+        **kwargs,
     ) -> str:
 
         self._validate_collection(collection)
@@ -157,9 +128,7 @@ class Database:
             missing_params.append("vector")
 
         if missing_params:
-            raise RuntimeError(
-                f"Missing parameters: {', '.join(missing_params)}"
-            )
+            raise RuntimeError(f"Missing parameters: {', '.join(missing_params)}")
 
         if self.dimensions is None:
             if self.auto_dim:
@@ -179,10 +148,7 @@ class Database:
         record_id = get_uuid()
 
         self._records[collection][record_id] = Record(
-            id=record_id,
-            name=_name,
-            vector=_vector,
-            metadata=_metadata or {}
+            id=record_id, name=_name, vector=_vector, metadata=_metadata or {}
         )
 
         if self.auto_persist:
@@ -190,11 +156,7 @@ class Database:
 
         return record_id
 
-    def delete_doc(
-        self,
-        id: str,
-        collection: str = "default"
-    ) -> None:
+    def delete_doc(self, id: str, collection: str = "default") -> None:
 
         self._validate_doc(collection, id)
 
@@ -209,7 +171,7 @@ class Database:
         collection: str = "default",
         name: Optional[str] = None,
         vector: Optional[list[float]] = None,
-        metadata: Optional[dict[str, Any]] = None
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
 
         # FIX 1: Validate that the document exists BEFORE checking dimensions.
@@ -246,11 +208,7 @@ class Database:
         if self.auto_persist:
             self.persist_doc()
 
-    def get_doc(
-        self,
-        id: str,
-        collection: str = "default"
-    ) -> Record:
+    def get_doc(self, id: str, collection: str = "default") -> Record:
 
         self._validate_doc(collection, id)
 
@@ -309,19 +267,13 @@ class Database:
     # Utility
     # ==========================================================
 
-    def list_docs(
-        self,
-        collection: str = "default"
-    ) -> list[str]:
+    def list_docs(self, collection: str = "default") -> list[str]:
 
         self._validate_collection(collection)
 
         return list(self._records[collection].keys())
 
-    def clear(
-        self,
-        collection: Optional[str] = None
-    ) -> None:
+    def clear(self, collection: Optional[str] = None) -> None:
 
         if collection is None:
             self._records = {"default": {}}
@@ -336,24 +288,16 @@ class Database:
     # Persistence
     # ==========================================================
 
-    def persist_doc(
-        self
-    ) -> None:
+    def persist_doc(self) -> None:
 
         # FIX 4: Raise on failure instead of silently swallowing errors.
         # The old code printed a message and returned None, giving the caller
         # no way to detect that the write failed. Callers that depend on
         # durability (e.g. auto_persist=True) need to know when it breaks.
         with open(self._path, "wb") as f:
-            pickle.dump(
-                self._records,
-                f,
-                protocol=pickle.HIGHEST_PROTOCOL
-            )
+            pickle.dump(self._records, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def _load_doc(
-        self
-    ) -> None:
+    def _load_doc(self) -> None:
 
         if not os.path.exists(self._path):
             self._records = {"default": {}}
@@ -378,9 +322,7 @@ class Database:
     # Statistics
     # ==========================================================
 
-    def stats(
-        self
-    ) -> dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
 
         total_docs = 0
         dimensions = []
@@ -390,17 +332,13 @@ class Database:
                 total_docs += 1
                 dimensions.append(len(record.vector))
 
-        avg_dim = (
-            sum(dimensions) / len(dimensions)
-            if dimensions
-            else 0
-        )
+        avg_dim = sum(dimensions) / len(dimensions) if dimensions else 0
 
         return {
             "collections": len(self._records),
             "documents": total_docs,
             "average_dimension": avg_dim,
-            "database_path": self._path
+            "database_path": self._path,
         }
 
     # ==========================================================
@@ -408,16 +346,10 @@ class Database:
     # ==========================================================
 
     def __len__(self) -> int:
-        return sum(
-            len(collection)
-            for collection in self._records.values()
-        )
+        return sum(len(collection) for collection in self._records.values())
 
     def __contains__(self, id: str) -> bool:
-        return any(
-            id in collection
-            for collection in self._records.values()
-        )
+        return any(id in collection for collection in self._records.values())
 
     def __repr__(self) -> str:
         return (

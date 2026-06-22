@@ -5,10 +5,7 @@ from typing import Any
 class BaseIndex(ABC):
 
     @abstractmethod
-    def build(
-        self,
-        vectors: dict[str, list[float]]
-    ) -> None:
+    def build(self, vectors: dict[str, list[float]]) -> None:
         """
         Build the index from a collection
         of vectors.
@@ -16,32 +13,21 @@ class BaseIndex(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def add(
-        self,
-        record_id: str,
-        vector: list[float]
-    ) -> None:
+    def add(self, record_id: str, vector: list[float]) -> None:
         """
         Add a new vector to the index.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def remove(
-        self,
-        record_id: str
-    ) -> None:
+    def remove(self, record_id: str) -> None:
         """
         Remove a vector from the index.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def update(
-        self,
-        record_id: str,
-        vector: list[float]
-    ) -> None:
+    def update(self, record_id: str, vector: list[float]) -> None:
         """
         Update an existing vector.
         """
@@ -49,10 +35,7 @@ class BaseIndex(ABC):
 
     @abstractmethod
     def search(
-        self,
-        query_vector: list[float],
-        top_k: int = 3,
-        **kwargs: Any
+        self, query_vector: list[float], top_k: int = 3, **kwargs: Any
     ) -> list[tuple[str, float]]:
         """
         Search for nearest neighbors.
@@ -66,9 +49,7 @@ class BaseIndex(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def clear(
-        self
-    ) -> None:
+    def clear(self) -> None:
         """
         Remove all vectors
         from the index.
@@ -76,29 +57,21 @@ class BaseIndex(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def size(
-        self
-    ) -> int:
+    def size(self) -> int:
         """
         Number of indexed vectors.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def save(
-        self,
-        path: str
-    ) -> None:
+    def save(self, path: str) -> None:
         """
         Persist index to disk.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def load(
-        self,
-        path: str
-    ) -> None:
+    def load(self, path: str) -> None:
         """
         Load index from disk.
         """
